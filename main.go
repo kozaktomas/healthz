@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/pires/go-proxyproto"
 )
 
 func main() {
@@ -32,13 +35,23 @@ func main() {
 		Handler: mux,
 	}
 
+	// Create a listener
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatalf("Error creating listener: %v", err)
+	}
+
+	// Wrap the listener with Proxy Protocol support
+	proxyListener := &proxyproto.Listener{Listener: listener}
+	defer proxyListener.Close()
+
 	// Channel to listen for termination signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		fmt.Println("Server is running on port 8080...")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(proxyListener); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error starting server: %v", err)
 		}
 	}()
